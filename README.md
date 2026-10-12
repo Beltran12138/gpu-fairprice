@@ -31,6 +31,32 @@ Whether that blindness costs them occupancy is what the panel data is for.
 | 3. Survival model: time-to-unavailable vs. price premium | needs ≥ several days of panel |
 | 4. Seller tool: fair range, power-cost floor, occupancy curve | — |
 
+## Method sketch: a market-maker's arrival curve, applied to a host
+
+A GPU-hour is perishable inventory: an hour not rented is gone. That makes the
+host's problem the same shape as a market maker's quoting problem in
+Avellaneda & Stoikov (2008), where fills arrive at intensity
+
+    λ(δ) = A · exp(−k · δ)
+
+for a quote placed δ away from the reference price. Here δ is the listing's
+premium over its **hedonic fair value** (stage 2), and "fill" is the listing
+becoming unavailable (stage 3). Two consequences:
+
+- `k` is exactly the price ↔ time-to-rent curve this project wants to measure,
+  estimated per GPU segment from the snapshot panel.
+- With an additive premium (price `p = v + δ`), a risk-neutral host maximising
+  expected revenue `p · λ(p − v)` has first-order condition `1 − k·p = 0`, so
+  the revenue-maximising list price is `p* = 1/k`, independent of `v` within a
+  segment. If the data say the decay is not exponential (e.g. a cliff around
+  fair value), the closed form goes and we optimise numerically. Either way the
+  output is the "price guidance" a marketplace can show a seller who has no
+  idea what to ask.
+
+What does *not* transfer from market making: there is no liquid hedge for a
+GPU-hour, no continuous mid price (the fair value is itself an estimate), and
+listings are not fungible. The fair-value model carries most of the weight.
+
 ## Pre-registered kill criterion
 
 Out of sample, predict whether a new listing becomes unavailable within 24h.
@@ -40,7 +66,10 @@ same-GPU median), the "price guidance" idea is not supported and we say so.
 ## Known measurement caveats
 
 - `rentable = false` is a **proxy** for "rented": a machine can also be
-  unavailable because it is offline. Treated as an upper bound on occupancy.
+  unavailable because it is offline, or because the host is **renting its own
+  machine** (Vast documents self-rentals; they block clients but earn nothing).
+  Treated as an upper bound on occupancy. Background "default jobs" do not
+  block clients, so they should not contaminate the proxy.
 - These are **ask** prices, not transaction prices.
 - The public search endpoint caps results at 64 per query; the collector
   bisects the price axis until every band is complete (`snapshots.n_truncated`
