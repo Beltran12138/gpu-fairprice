@@ -27,9 +27,24 @@ Whether that blindness costs them occupancy is what the panel data is for.
 | Stage | State |
 |---|---|
 | 1. Collector: snapshot all public Vast.ai offers to SQLite | running |
-| 2. Hedonic fair-value model (quantile regression per GPU) | waiting for data |
-| 3. Survival model: time-to-unavailable vs. price premium | needs ≥ several days of panel |
-| 4. Seller tool: fair range, power-cost floor, occupancy curve | — |
+| 2. Hedonic fair-value model | first pass done (`analysis/first_pass.py`) |
+| 3. Price ↔ time-to-rent: does price guidance beat the naive baseline? | pre-registered 24h test due 2026-10-19 |
+| 4. Machine rentability score (pre-registered below) | trains on data to 2026-10-19, tested 10-19 → 10-26 |
+
+### First pass, 2026-10-16 (exploratory)
+
+- Extended features (network, memory bandwidth, PCIe, CUDA, region…) explain
+  more than the pilot suggested: 5-fold CV R² of log price per GPU is
+  0.24–0.26 for RTX 4090, ~0.37 for 3090, 0.30 for 5090 (GBM). Most of the
+  variance is still unexplained.
+- The pre-registered 24h test could not be run yet: laptop sleep left no
+  gap-free 24h window (longest was 8.8h).
+- On 2h and 4h windows, across four label variants, **price relative to the
+  same-GPU median predicts nothing** (AUC 0.46–0.55). Models do beat the
+  baseline (AUC 0.61–0.72), but the lift comes entirely from non-price
+  features: machine reliability, verification, datacenter tier, and the
+  machine's own history. If the 24h test agrees, the price-guidance idea is
+  not supported and this README will say so plainly.
 
 ## Method sketch: a market-maker's arrival curve, applied to a host
 
@@ -63,6 +78,27 @@ Out of sample, predict whether a new listing becomes unavailable within 24h.
 If the model's AUC is not clearly above the naive baseline (price relative to
 same-GPU median), the "price guidance" idea is not supported and we say so.
 
+## Pre-registered: machine rentability score (written 2026-10-16, before the data it is tested on exists)
+
+The first pass says *which machine* matters more than *what price*. The next
+claim to test is that a score built from a machine's observed history ranks
+machines better than the reliability number Vast already publishes.
+
+- **Target**: per machine, the share of observed snapshots in the test window
+  where it is unrentable for two or more consecutive observations (an
+  occupancy proxy; see caveats). Binary label: above the median of its GPU
+  model.
+- **Train**: all snapshots up to 2026-10-19 00:00 UTC. **Test**: 2026-10-19
+  00:00 → 2026-10-26 00:00 UTC. Machines need ≥ 20 observations in each
+  window.
+- **Baseline**: Vast's own `reliability2`.
+- **Score**: history features from the train window only (past occupancy
+  share, count of sub-30-minute unrentable blips, spell starts) plus static
+  machine features.
+- **Kill criterion**: if the score's test AUC does not beat the baseline by
+  at least 0.05, with a 95% bootstrap interval excluding zero, the score adds
+  nothing over what Vast already shows, and we say so.
+
 ## Known measurement caveats
 
 - `rentable = false` is a **proxy** for "rented": a machine can also be
@@ -71,6 +107,12 @@ same-GPU median), the "price guidance" idea is not supported and we say so.
   Treated as an upper bound on occupancy. Background "default jobs" do not
   block clients, so they should not contaminate the proxy.
 - These are **ask** prices, not transaction prices.
+- **The collector misses about 8% of machines in any one snapshot** (present
+  in the snapshots before and after, absent in between). Absence is treated as
+  "not observed", never as a state. Fixing the collector is scheduled after
+  the 2026-10-19 test so the measurement does not change mid-test.
+- Unrentable spells are mostly short: 56% last a single snapshot (≤ 30 min),
+  which is why the analysis offers a "sustained" label.
 - The public search endpoint caps results at 64 per query; the collector
   bisects the price axis until every band is complete (`snapshots.n_truncated`
   records any band that could not be split further).
