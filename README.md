@@ -30,6 +30,7 @@ Whether that blindness costs them occupancy is what the panel data is for.
 | 2. Hedonic fair-value model | first pass done (`analysis/first_pass.py`) |
 | 3. Price ↔ time-to-rent: does price guidance beat the naive baseline? | pre-registered 24h test due 2026-10-19 |
 | 4. Machine rentability score (pre-registered below) | trains on data to 2026-10-19, tested 10-19 → 10-26 |
+| 5. Crypto-mining confound check (pre-registered below) | tested 10-19 → 10-26 |
 
 ### First pass, 2026-10-16 (exploratory)
 
@@ -98,6 +99,26 @@ machines better than the reliability number Vast already publishes.
 - **Kill criterion**: if the score's test AUC does not beat the baseline by
   at least 0.05, with a 95% bootstrap interval excluding zero, the score adds
   nothing over what Vast already shows, and we say so.
+
+## Pre-registered: crypto-mining confound (written 2026-10-18, before the test window)
+
+Pearl (PRL) mining runs on consumer NVIDIA cards, and miners rent them on
+Vast; [arXiv 2606.04819](https://arxiv.org/abs/2606.04819) reports budget-GPU
+utilization on Vast rising from 57% to 94% after the miner's release. If that
+demand is material, consumer-card occupancy here is partly a token-price
+signal, not AI demand.
+
+- **Exploratory, 2026-10-12 → 10-18** (`analysis/prl_confound.py`): hourly
+  changes in consumer-card unrentable share vs log PRL price, r = +0.31
+  (n = 55); datacenter cards r = +0.03. Placebo (PRL series circularly
+  shifted ≥ 24h): 95th percentile +0.36, p ≈ 0.08. Not significant.
+- **Test window**: 2026-10-19 00:00 → 2026-10-26 00:00 UTC, same script, PRL
+  hourly prices from CoinGecko (`pearl-2`).
+- **Supported if** the consumer correlation exceeds the placebo 95th
+  percentile **and** the (consumer − datacenter) correlation is positive.
+  Otherwise we report the confound as not supported in that window.
+- Either way the rentability score result above is reported with this check
+  next to it.
 
 ## Known measurement caveats
 
