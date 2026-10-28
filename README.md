@@ -26,11 +26,24 @@ Whether that blindness costs them occupancy is what the panel data is for.
 
 | Stage | State |
 |---|---|
-| 1. Collector: snapshot all public Vast.ai offers to SQLite | running |
+| 1. Collector: snapshot all public Vast.ai offers to SQLite | **stopped 2026-10-28** (see note below the table) |
 | 2. Hedonic fair-value model | first pass done (`analysis/first_pass.py`) |
-| 3. Price ↔ time-to-rent: does price guidance beat the naive baseline? | pre-registered 24h test due 2026-10-19 |
-| 4. Machine rentability score (pre-registered below) | trains on data to 2026-10-19, tested 10-19 → 10-26 |
+| 3. Price ↔ time-to-rent: does price guidance beat the naive baseline? | **no verdict**: the 10-19 run found no complete 24h window (see note) |
+| 4. Machine rentability score (pre-registered below) | **not run** (see note) |
 | 5. Crypto-mining confound check (pre-registered below) | **not supported** in the 10-19 → 10-26 window (run 2026-10-28) |
+
+**Note, 2026-10-28.** Collection stopped after the pre-registered windows
+closed. Vast.ai's terms of service restrict automated collection and the
+building of benchmark or market-data products from its data without written
+permission; this project has no such permission, so it publishes no further
+price statistics. The existing analyses stay up as a record.
+
+Stage 3 has no verdict. The scheduled 10-19 run (`analysis/run_verdict.cmd`)
+found zero listings with a complete 24h observation window, for the same
+reason as the first pass: collector gaps (laptop sleep, runs up to 31 minutes)
+leave no gap-free 24h stretch. The 2h/4h exploratory result above is the only
+evidence, and it is exploratory. Stage 4 was never run: no scoring script was
+written before collection stopped.
 
 ### First pass, 2026-10-16 (exploratory)
 
