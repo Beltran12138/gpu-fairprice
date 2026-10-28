@@ -30,7 +30,7 @@ Whether that blindness costs them occupancy is what the panel data is for.
 | 2. Hedonic fair-value model | first pass done (`analysis/first_pass.py`) |
 | 3. Price ↔ time-to-rent: does price guidance beat the naive baseline? | pre-registered 24h test due 2026-10-19 |
 | 4. Machine rentability score (pre-registered below) | trains on data to 2026-10-19, tested 10-19 → 10-26 |
-| 5. Crypto-mining confound check (pre-registered below) | tested 10-19 → 10-26 |
+| 5. Crypto-mining confound check (pre-registered below) | **not supported** in the 10-19 → 10-26 window (run 2026-10-28) |
 
 ### First pass, 2026-10-16 (exploratory)
 
@@ -119,6 +119,14 @@ signal, not AI demand.
   Otherwise we report the confound as not supported in that window.
 - Either way the rentability score result above is reported with this check
   next to it.
+- **Result (run 2026-10-28, same script, unchanged):** 111 snapshots in the
+  window (collector gaps: 7 on 10-22, none on 10-24, 8 on 10-25), n = 53
+  consecutive-hour changes. Consumer r = +0.16, datacenter r = +0.08,
+  (consumer − datacenter) r = +0.007. Placebo (119 shifts): 95th percentile
+  +0.37, share ≥ real 0.27. **Confound not supported in this window.** With
+  n = 53 the test cannot rule out a correlation below about +0.37; it only
+  says the exploratory +0.31 did not replicate. PRL prices: CoinGecko
+  `pearl-2`, `days=10`, fetched 2026-10-28 (md5 ac3a814e…).
 
 ## Known measurement caveats
 
