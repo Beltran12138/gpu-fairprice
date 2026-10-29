@@ -137,8 +137,11 @@ signal, not AI demand.
   consecutive-hour changes. Consumer r = +0.16, datacenter r = +0.08,
   (consumer − datacenter) r = +0.007. Placebo (119 shifts): 95th percentile
   +0.37, share ≥ real 0.27. **Confound not supported in this window.** With
-  n = 53 the test cannot rule out a correlation below about +0.37; it only
-  says the exploratory +0.31 did not replicate. PRL prices: CoinGecko
+  n = 53 this only says the exploratory +0.31 did not replicate: the 95%
+  interval for the consumer correlation (Fisher z) is −0.11 to +0.41, so a
+  true correlation as high as about 0.4 is still consistent with the data.
+  (The +0.37 above is the placebo threshold for significance, not a bound on
+  the correlation; an earlier version of this paragraph used it as one.) PRL prices: CoinGecko
   `pearl-2`, `days=10`, fetched 2026-10-28 (md5 ac3a814e…).
 
 ## Known measurement caveats
