@@ -125,6 +125,8 @@ signal, not AI demand.
   changes in consumer-card unrentable share vs log PRL price, r = +0.31
   (n = 55); datacenter cards r = +0.03. Placebo (PRL series circularly
   shifted ≥ 24h): 95th percentile +0.36, p ≈ 0.08. Not significant.
+  *(This placebo was too wide; with a matched-n placebo the exploratory
+  correlation clears the threshold. See the 2026-11-09 correction below.)*
 - **Test window**: 2026-10-19 00:00 → 2026-10-26 00:00 UTC, same script, PRL
   hourly prices from CoinGecko (`pearl-2`).
 - **Supported if** the consumer correlation exceeds the placebo 95th
@@ -143,6 +145,44 @@ signal, not AI demand.
   (The +0.37 above is the placebo threshold for significance, not a bound on
   the correlation; an earlier version of this paragraph used it as one.) PRL prices: CoinGecko
   `pearl-2`, `days=10`, fetched 2026-10-28 (md5 ac3a814e…).
+- **Correction (2026-11-09): the placebo in `prl_confound.py` was too wide.**
+  The script shifts the hourly PRL series *with its collector gaps*, so each
+  shifted series loses pairs to NaN: 5–24 pairs per shift (median 17) in the
+  test window, against n = 53 for the real correlation; 12–36 (median 24)
+  against n = 58 in the exploratory window. A null built on ~17 pairs is far
+  wider than one built on 53. Found by an adversarial code audit; the
+  pre-registered script is left unchanged.
+  `analysis/prl_placebo_matched.py` re-runs the whole pipeline with the PRL
+  timestamps shifted by k hours instead, so every shift uses the same pairs and
+  the same price alignment as the real statistic. Its k = 0 run reproduces the
+  test-window statistic above (111 snapshots, n = 53, r = +0.162), and a
+  re-run of the original placebo on the same data gives 95th percentile
+  +0.368, share 0.269, as reported. So the re-fetched prices match the ones
+  used on 10-28.
+  - **Test window, verdict unchanged:** consumer r = +0.16. Matched placebo
+    95th percentile +0.20 (119 forward shifts) / +0.23 (119 backward); share ≥
+    real 0.13 / 0.17. **Confound not supported.** The +0.37 threshold above is
+    wrong; the margin is much thinner than it suggested.
+  - **Exploratory window, conclusion reversed:** the "not significant" above
+    does not hold. The original run (n = 55) cannot be reproduced exactly
+    (it ran before 10-18 ended); the two bracketing cut-offs give n = 50,
+    r = +0.29 (end 10-18 00:00) and n = 58, r = +0.28 (end 10-19 00:00).
+    Against forward shifts both sit above the matched 95th percentile (+0.23,
+    share ≥ real 0.04); backward shifts are limited to 25 by price coverage.
+    Read this as "the exploratory correlation was not ruled out by the
+    placebo", not as evidence of a confound: neighbouring shifts are
+    strongly correlated, so a share of 0.04 from ~100 shifts is fragile, and
+    this placebo design was chosen after the audit.
+  - The test window, which is the pre-registered check, still does not
+    support the confound. What changes is that the exploratory signal was
+    real by the original rule, so "did not replicate" is now the substantive
+    finding rather than "was never there".
+  - Not addressed here: the per-machine collapse mixes the rentable state of
+    one bundle with the specs of another (`groupby.last` vs `max`). Both runs
+    above keep that collapse as is.
+  - PRL prices for the re-run: CoinGecko `pearl-2`, `days=30`, fetched
+    2026-11-09 (md5 250737dc…). Hourly points; every snapshot matched within
+    90 minutes.
 
 ## Known measurement caveats
 
