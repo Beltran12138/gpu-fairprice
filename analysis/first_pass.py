@@ -42,10 +42,13 @@ def load():
     df = pd.read_sql_query("select * from offers", con)
     con.close()
     df["ts"] = pd.to_datetime(df["snapshot_ts"])
-    # one row per machine per snapshot: the offer covering the most GPUs
-    df = df.sort_values("num_gpus").groupby(["snapshot_ts", "machine_id"], as_index=False).agg(
-        {**{c: "last" for c in df.columns if c not in ("snapshot_ts", "machine_id", "rentable")},
-         "rentable": "max"})
+    # One row per machine per snapshot, taken whole from a single offer: the
+    # largest rentable bundle if any bundle is rentable, else the largest bundle.
+    # (Until 2026-11-09 this took price/specs from the largest bundle and
+    # rentable = max over bundles, column by column, so a rentable machine
+    # could carry the price of a bundle that could not be rented.)
+    df = df.sort_values(["rentable", "num_gpus"], kind="mergesort").groupby(
+        ["snapshot_ts", "machine_id"], as_index=False).tail(1)
     df["price_pg"] = df["dph_total"] / df["num_gpus"]
     df = df[df["price_pg"] > 0]
     df["lp"] = np.log(df["price_pg"])

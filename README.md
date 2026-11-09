@@ -59,6 +59,33 @@ written before collection stopped.
   features: machine reliability, verification, datacenter tier, and the
   machine's own history. If the 24h test agrees, the price-guidance idea is
   not supported and this README will say so plainly.
+- **Correction (2026-11-09), found by an adversarial code audit.**
+  - *The bug.* Machines list several bundles (1 GPU, 2 GPUs, …). Per-GPU price
+    differs across a machine's bundles in 98% of multi-bundle machine-snapshots.
+    The collapse to one row per machine took price and specs from the largest
+    bundle, but took `rentable` as the max over all bundles, column by column.
+    So a rentable machine often carried the price of a bundle that could not be
+    rented.
+  - *The fix.* `first_pass.py` now takes each row whole from one offer: the
+    largest rentable bundle if any is rentable, else the largest bundle. The
+    outcome definition is unchanged.
+  - *Re-run.* The data is cut at the same 10-16 08:32 snapshot (81 snapshots);
+    old and new code were run side by side on 2h/4h × any/sustained. Event
+    counts barely move (2,635 → 2,622 at 2h).
+  - **The baseline result stands:** price relative to the same-GPU median gives
+    AUC 0.48–0.53 before and 0.48–0.52 after the fix, and the hedonic premium alone gives
+    0.52–0.55.
+  - The full models rise slightly: GBM goes from 0.65–0.67 to 0.65–0.74, and
+    logistic from 0.67–0.72 to 0.69–0.77.
+  - **"Entirely from non-price features" overstated it, before and after the
+    fix.** Dropping the two price features lowers GBM AUC by 0.00–0.05 with the
+    old code and by 0.02–0.05 with the new code. These are point estimates with
+    no interval, from a bootstrap that is not clustered by machine. Read them
+    as "price features add little beyond machine features", not "nothing".
+  - The PRL confound check uses only GPU model and rentable state, and a
+    machine's bundles differ in GPU model in 0.7% of multi-bundle
+    machine-snapshots. So the check is essentially unaffected and was not
+    re-run.
 
 ## Method sketch: a market-maker's arrival curve, applied to a host
 
@@ -177,9 +204,10 @@ signal, not AI demand.
     support the confound. What changes is that the exploratory signal was
     real by the original rule, so "did not replicate" is now the substantive
     finding rather than "was never there".
-  - Not addressed here: the per-machine collapse mixes the rentable state of
-    one bundle with the specs of another (`groupby.last` vs `max`). Both runs
-    above keep that collapse as is.
+  - The per-machine collapse mixes the rentable state of one bundle with the
+    specs of another (`groupby.last` vs `max`). Both runs above keep that
+    collapse as is. Here it only affects which GPU model a machine is assigned
+    to (see the first-pass correction above).
   - PRL prices for the re-run: CoinGecko `pearl-2`, `days=30`, fetched
     2026-11-09 (md5 250737dc…). Hourly points; every snapshot matched within
     90 minutes.
