@@ -11,6 +11,7 @@ Usage: python analysis/first_pass.py [db] [horizon_hours] [any|sustained] [max_s
   sustained      outcome needs two consecutive unrentable observations
   max_starts     drop machines with more spell starts than this in train
 """
+import os
 import sqlite3
 import sys
 from datetime import timedelta
@@ -20,11 +21,15 @@ import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import KFold, cross_val_predict
+from sklearn.model_selection import GroupKFold, cross_val_predict
 
 DB = sys.argv[1] if len(sys.argv) > 1 else "data/vast.sqlite"
 FOCUS = ["RTX 4090", "RTX 5090", "RTX 3090", "RTX 3060", "RTX 5060 Ti", "RTX 5080"]
-MAX_GAP_H = 1.0   # consecutive snapshots further apart than this break a spell
+# Consecutive snapshots further apart than this break a spell. Gaps cluster at
+# ~0.5h (normal) and ~1.0h (one missed run, 0.9997-1.05h), next 1.30h. 1.1
+# allows one missed run; the old 1.0 split identical one-miss gaps by seconds
+# of jitter. Override with GAP_H env var for sensitivity runs.
+MAX_GAP_H = float(os.environ.get("GAP_H", "1.1"))
 HORIZON_H = float(sys.argv[2]) if len(sys.argv) > 2 else 24.0  # pre-registered: 24
 LABEL = sys.argv[3] if len(sys.argv) > 3 else "any"            # any | sustained
 MAX_STARTS = int(sys.argv[4]) if len(sys.argv) > 4 else 0       # drop machines with more spell starts in train (0 = keep all)
@@ -64,8 +69,9 @@ def load():
     return df
 
 
-def cv_r2(X, y, model):
-    pred = cross_val_predict(model, X, y, cv=KFold(5, shuffle=True, random_state=0))
+def cv_r2(X, y, model, groups):
+    # folds grouped by host, so a host's pricing cannot leak across folds
+    pred = cross_val_predict(model, X, y, cv=GroupKFold(5), groups=groups)
     return 1 - ((y - pred) ** 2).sum() / ((y - y.mean()) ** 2).sum()
 
 
@@ -78,7 +84,7 @@ def hedonic(df):
         if len(d) < 60:
             continue
         y = d["lp"].values
-        r = [cv_r2(d[f].fillna(0).values, y, m) for f, m in
+        r = [cv_r2(d[f].fillna(0).values, y, m, d["host_id"].values) for f, m in
              ((PILOT, LinearRegression()), (EXTENDED, LinearRegression()),
               (EXTENDED, HistGradientBoostingRegressor(max_iter=200, random_state=0)))]
         print(f"{g:<13}{len(d):>5}{r[0]:>11.2f}{r[1]:>9.2f}{r[2]:>9.2f}")
@@ -144,26 +150,37 @@ def kill_test(df):
     cut = ev["ts"].quantile(0.6)
     tr, te = ev[ev["ts"] <= cut], ev[ev["ts"] > cut]
     if MAX_STARTS:
-        # flappy hosts identified from the training period only
-        starts = tr.groupby("machine_id").size()
+        # flappy hosts identified from the training period only: count every
+        # unrentable -> rentable transition between consecutive observations,
+        # not only the starts that survived the complete-window filters
+        o = df[df["ts"] <= cut].sort_values("ts")
+        prev = o.groupby("machine_id")["rentable"].shift(1)
+        starts = ((o["rentable"] == 1) & (prev == 0)).groupby(o["machine_id"]).sum()
         flappy = set(starts[starts > MAX_STARTS].index)
         tr, te = tr[~tr["machine_id"].isin(flappy)], te[~te["machine_id"].isin(flappy)]
         print(f"dropped {len(flappy)} flappy machines")
     print(f"train n={len(tr)} (<= {cut}), test n={len(te)}")
-    # hedonic premium: fair value fitted on training-period rows only
+    # hedonic premium: fair value fitted on training-period rows only, cross-fitted
+    # by host: each host is assigned to one of 5 folds, and its events (train or
+    # test) are priced by a model that never saw that host's rows. Grouped by host,
+    # not machine: a host prices all its machines alike (see hedonic CV). Until
+    # 2026-11-09 train events were priced in-sample and test events out-of-sample.
     fit_rows = df[df["ts"] <= cut]
+    fold = lambda s: s.map(lambda h: int(h) % 5)
     for part in (tr, te):
         part["premium"] = np.nan
     for g in FOCUS:
         f = fit_rows[fit_rows["gpu_name"] == g]
         if len(f) < 60:
             continue
-        m = HistGradientBoostingRegressor(max_iter=200, random_state=0).fit(
-            f[EXTENDED].fillna(0).values, f["lp"].values)
-        for part in (tr, te):
-            k = part["gpu_name"] == g
-            if k.any():
-                part.loc[k, "premium"] = part.loc[k, "lp"] - m.predict(part.loc[k, EXTENDED].fillna(0).values)
+        ff = fold(f["host_id"])
+        for j in range(5):
+            m = HistGradientBoostingRegressor(max_iter=200, random_state=0).fit(
+                f.loc[ff != j, EXTENDED].fillna(0).values, f.loc[ff != j, "lp"].values)
+            for part in (tr, te):
+                k = (part["gpu_name"] == g) & (fold(part["host_id"]) == j)
+                if k.any():
+                    part.loc[k, "premium"] = part.loc[k, "lp"] - m.predict(part.loc[k, EXTENDED].fillna(0).values)
     tr, te = tr.dropna(subset=["premium"]), te.dropna(subset=["premium"])
     if te["y"].nunique() < 2:
         print("test set has one class only")
@@ -177,22 +194,29 @@ def kill_test(df):
     print(f"AUC hedonic premium only:               {prem_only:.3f}")
     print(f"AUC logistic (premium + features):      {roc_auc_score(te['y'], lr.predict_proba(te[feats].fillna(0))[:, 1]):.3f}")
     print(f"AUC GBM (premium + features):           {roc_auc_score(te['y'], gb.predict_proba(te[feats].fillna(0))[:, 1]):.3f}")
-    # bootstrap CI on (GBM - baseline)
-    rng = np.random.default_rng(0)
-    p_gb = gb.predict_proba(te[feats].fillna(0))[:, 1]
-    yv, bv = te["y"].values, -te["rel_price"].values
-    d = []
-    for _ in range(1000):
-        i = rng.integers(0, len(te), len(te))
-        if len(set(yv[i])) < 2:
-            continue
-        d.append(roc_auc_score(yv[i], p_gb[i]) - roc_auc_score(yv[i], bv[i]))
-    print(f"GBM - baseline: {np.mean(d):+.3f}  95% CI [{np.percentile(d, 2.5):+.3f}, {np.percentile(d, 97.5):+.3f}]")
     # Where does any lift come from? The kill criterion is about *price*
     # guidance, so a win carried by machine identity does not count.
     nonprice = [f for f in feats if f not in ("premium", "rel_price")]
     gb_np = HistGradientBoostingClassifier(max_iter=200, random_state=0).fit(tr[nonprice].fillna(0), tr["y"])
-    print(f"AUC GBM non-price features only:        {roc_auc_score(te['y'], gb_np.predict_proba(te[nonprice].fillna(0))[:, 1]):.3f}")
+    p_np = gb_np.predict_proba(te[nonprice].fillna(0))[:, 1]
+    print(f"AUC GBM non-price features only:        {roc_auc_score(te['y'], p_np):.3f}")
+    # bootstrap CIs resampling whole machines (events of one machine are correlated)
+    rng = np.random.default_rng(0)
+    p_gb = gb.predict_proba(te[feats].fillna(0))[:, 1]
+    yv, bv = te["y"].values, -te["rel_price"].values
+    groups = pd.Series(np.arange(len(te))).groupby(te["machine_id"].values).apply(np.array).tolist()
+    print(f"test machines (bootstrap clusters): {len(groups)}")
+    d_base, d_price = [], []
+    for _ in range(1000):
+        i = np.concatenate([groups[j] for j in rng.integers(0, len(groups), len(groups))])
+        if len(set(yv[i])) < 2:
+            continue
+        a = roc_auc_score(yv[i], p_gb[i])
+        d_base.append(a - roc_auc_score(yv[i], bv[i]))
+        d_price.append(a - roc_auc_score(yv[i], p_np[i]))
+    ci = lambda d: f"{np.mean(d):+.3f}  95% CI [{np.percentile(d, 2.5):+.3f}, {np.percentile(d, 97.5):+.3f}]"
+    print(f"GBM - baseline:                {ci(d_base)}")
+    print(f"GBM - GBM without price feats: {ci(d_price)}")
     hist = tr.groupby("machine_id")["y"].mean()
     k = te["machine_id"].isin(hist.index)
     if k.sum() > 50 and te.loc[k, "y"].nunique() == 2:

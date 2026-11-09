@@ -51,6 +51,9 @@ written before collection stopped.
   more than the pilot suggested: 5-fold CV R² of log price per GPU is
   0.24–0.26 for RTX 4090, ~0.37 for 3090, 0.30 for 5090 (GBM). Most of the
   variance is still unexplained.
+  *(Withdrawn 2026-11-09: these folds were not grouped by host, and with
+  host-grouped folds the R² mostly disappears. See the second correction
+  below.)*
 - The pre-registered 24h test could not be run yet: laptop sleep left no
   gap-free 24h window (longest was 8.8h).
 - On 2h and 4h windows, across four label variants, **price relative to the
@@ -82,10 +85,56 @@ written before collection stopped.
     old code and by 0.02–0.05 with the new code. These are point estimates with
     no interval, from a bootstrap that is not clustered by machine. Read them
     as "price features add little beyond machine features", not "nothing".
+    *(Superseded by the intervals in the second correction below.)*
   - The PRL confound check uses only GPU model and rentable state, and a
     machine's bundles differ in GPU model in 0.7% of multi-bundle
     machine-snapshots. So the check is essentially unaffected and was not
     re-run.
+- **Second correction (2026-11-09): the remaining five audit findings.** All
+  were fixed in `first_pass.py` and re-run on the same 10-16 cut, across
+  2h/4h × any/sustained × flappy filter off/on, plus two runs with a stricter
+  gap threshold.
+  - **Hedonic CV was not grouped by host, and grouping by host removes most of
+    the R².** A host prices all its machines alike, so shuffled folds let a
+    host's pricing leak from training into test. With folds grouped by
+    `host_id`, GBM R² on the extended features (10-16 snapshot) is −0.08 for
+    RTX 4090, 0.08 for 5090 and 0.24 for 3090, against 0.25 / 0.33 / 0.41 with
+    shuffled folds on the same data. The collapse fix does not explain the
+    drop: it moves these numbers by at most 0.01. The specs largely do not
+    predict what a *new* host will charge. That weakens stage 2 itself: a
+    "fair value" from specs is mostly a fair value for hosts the model has
+    already seen.
+  - *The old README figures could not be reproduced.* The 10-16 log gives
+    4090 0.23, 3090 0.41, 5090 0.31. A scheduled run on the 10-19 snapshot gave
+    4090 0.05, so single-snapshot fits were unstable even before grouping.
+  - **The hedonic premium was in-sample for training events and out-of-sample
+    for test events.** It is now cross-fitted by host: each event is priced by
+    a model that never saw its host. On its own, the premium now gives AUC
+    0.50–0.62, with no interval.
+  - **The bootstrap now resamples whole machines** (188–587 test machines,
+    depending on the variant). It now also covers the price-feature increment
+    (GBM minus the same GBM without the two price features).
+  - **The gap threshold sat on a knife-edge.** Snapshot gaps cluster at about
+    0.5h, and at 1.0h after one missed run (0.9997–1.05h); the next gap is
+    1.30h. The old threshold of 1.0 split identical one-miss gaps by seconds of
+    jitter. It is now 1.1, which allows one missed run. With a stricter 0.9
+    (no missed run allowed), events fall by 38–54% and the conclusions below
+    are unchanged.
+  - **The flappy filter counted labelled events, not spell starts.** It now
+    counts every unrentable → rentable transition in the training period.
+  - **Results after all fixes:**
+    - Price relative to the same-GPU median: AUC 0.44–0.52 across all ten
+      runs. **The baseline result stands.**
+    - GBM minus that baseline: clustered 95% CIs exclude 0 in every run, with
+      lower bounds of +0.07 to +0.13.
+    - Price-feature increment: point estimates −0.03 to +0.05. The CI excludes
+      0 in 1 of 10 runs, and only just (2h, any label, no filter:
+      +0.04 [+0.003, +0.084]).
+    - Read: price features add little or nothing detectable beyond machine
+      features. The earlier "entirely" was too strong as a statement but holds
+      as a finding.
+  - The pre-registered 24h test, re-run on the full data with the new
+    threshold, still finds 0 listings with a complete window.
 
 ## Method sketch: a market-maker's arrival curve, applied to a host
 
